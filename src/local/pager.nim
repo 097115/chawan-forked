@@ -116,7 +116,7 @@ type
     container*: Container
     prev*: Container
 
-  Pager* = ref object
+  Pager* = ref object of RootObj
     alertState: PagerAlertState
     alerts*: seq[string]
     askcharpromise*: Promise[string]
@@ -142,6 +142,7 @@ type
     linemode: LineMode
     loader*: FileLoader
     luctx: LUContext
+    menu*: Select
     navDirection {.jsget.}: NavDirection
     notnum*: bool # has a non-numeric character been input already?
     numload*: int # number of pages currently being loaded
@@ -235,7 +236,9 @@ proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
 
 proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
   if pager.container != nil:
-    let cval = if pager.container.select != nil:
+    let cval = if pager.menu != nil:
+      ctx.toJS(pager.menu)
+    elif pager.container.select != nil:
       ctx.toJS(pager.container.select)
     else:
       ctx.toJS(pager.container)
@@ -715,10 +718,17 @@ proc draw*(pager: Pager) =
       imageRedraw = true
       if container.select != nil:
         container.select.redraw = true
-    if (let select = container.select; select != nil and select.redraw):
+    if (let select = container.select; select != nil and
+        (select.redraw or pager.display.redraw)):
       select.drawSelect(pager.display.grid)
       select.redraw = false
       pager.display.redraw = true
+  if (let menu = pager.menu; menu != nil and
+      (menu.redraw or pager.display.redraw)):
+    menu.drawSelect(pager.display.grid)
+    menu.redraw = false
+    pager.display.redraw = true
+    imageRedraw = false
   if pager.display.redraw:
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
@@ -749,6 +759,8 @@ proc draw*(pager: Pager) =
     pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
   elif pager.lineedit != nil:
     pager.term.setCursor(pager.lineedit.getCursorX(), pager.attrs.height - 1)
+  elif (let menu = pager.menu; menu != nil):
+    pager.term.setCursor(menu.getCursorX(), menu.getCursorY())
   elif container != nil:
     if (let select = container.select; select != nil):
       pager.term.setCursor(select.getCursorX(), select.getCursorY())
@@ -1463,7 +1475,9 @@ proc omniRewrite(pager: Pager; s: string): string =
 proc loadURL*(pager: Pager; url: string; ctype = none(string);
     cs = CHARSET_UNKNOWN) =
   let url0 = pager.omniRewrite(url)
-  let url = if url[0] == '~': expandPath(url0) else: url0
+  let url = expandPath(url0)
+  if url.len == 0:
+    return
   let firstparse = parseURL(url)
   if firstparse.isSome:
     let prev = if pager.container != nil:
@@ -2234,6 +2248,47 @@ proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
   JS_FreeValue(ctx, fun)
   for arg in args:
     JS_FreeValue(ctx, arg)
+
+const MenuMap = [
+  (" Previous buffer (,)", "pager.prevBuffer"),
+  (" Next buffer     (.)", "pager.nextBuffer"),
+  (" Discard buffer  (D)", "pager.discardBuffer"),
+  (" View source     (\\)", "pager.toggleSource"),
+  (" Edit source     (sE)", "buffer.sourceEdit"),
+  (" Save source     (sS)", "buffer.saveSource"),
+  (" Reload          (U)", "pager.reloadBuffer"),
+  (" Save link       (s<Enter>) ", "buffer.saveLink"),
+  (" View image      (I)", "buffer.viewImage"),
+  (" Linkify URLs    (:)", "buffer.markURL")
+]
+
+proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =
+  let pager = Pager(opaque)
+  case sr
+  of srCancel: discard
+  of srSubmit:
+    let action = MenuMap[select.selected[0]][1]
+    let fun = pager.config.cmd.map.getOrDefault(action, JS_UNDEFINED)
+    discard pager.timeouts.setTimeout(ttTimeout, fun, 0, [])
+  pager.menu = nil
+  if pager.container != nil:
+    pager.container.queueDraw()
+  pager.draw()
+
+proc openMenu*(pager: Pager; x = -1; y = -1) {.jsfunc.} =
+  let x = if x == -1 and pager.container != nil:
+    pager.container.acursorx
+  else:
+    max(x, 0)
+  let y = if y == -1 and pager.container != nil:
+    pager.container.acursory
+  else:
+    max(y, 0)
+  var options: seq[string] = @[]
+  for (s, _) in MenuMap:
+    options.add(s)
+  pager.menu = newSelect(false, options, @[], x, y, pager.bufWidth,
+    pager.bufHeight, menuFinish, pager)
 
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     bool =
