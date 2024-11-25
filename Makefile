@@ -4,6 +4,7 @@ OBJDIR ?= .obj
 OUTDIR ?= target
 # These paths are quoted in recipes.
 PREFIX ?= /usr/local
+DOCPREFIX ?= $(PREFIX)/share/doc
 MANPREFIX ?= $(PREFIX)/share/man
 MANPREFIX1 ?= $(MANPREFIX)/man1
 MANPREFIX5 ?= $(MANPREFIX)/man5
@@ -181,6 +182,8 @@ manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \
 
 manpages = $(manpages1) $(manpages5)
 
+docpages = $(shell find ./doc/ -type f -name \*.md -print0 | xargs -r0 ls -d)
+
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
@@ -208,6 +211,8 @@ install:
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
 	for f in $(manpages5); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX5)"; done
+	mkdir -p "$(DESTDIR)$(DOCPREFIX)"
+	for f in $(docpages); do install -m644 "$$f" "$(DESTDIR)$(DOCPREFIX)"; done
 
 .PHONY: uninstall
 uninstall:
