@@ -23,10 +23,6 @@ import io/dynstream
 import io/poll
 import io/promise
 import io/timeout
-import loader/headers
-import loader/loaderiface
-import loader/request
-import loader/response
 import local/container
 import local/lineedit
 import local/pager
@@ -43,6 +39,10 @@ import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
 import server/forkserver
+import server/headers
+import server/loaderiface
+import server/request
+import server/response
 import types/blob
 import types/cookie
 import types/opt
@@ -93,14 +93,6 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
     discard
   return 0
 
-proc runJSJobs(client: Client) =
-  while true:
-    let r = client.jsrt.runJSJobs()
-    if r.isSome:
-      break
-    let ctx = r.error
-    ctx.writeException(client.console.err)
-
 proc cleanup(client: Client) =
   if client.alive:
     client.alive = false
@@ -117,6 +109,16 @@ proc cleanup(client: Client) =
 proc quit(client: Client; code = 0) =
   client.cleanup()
   quit(code)
+
+proc runJSJobs(client: Client) =
+  while true:
+    let r = client.jsrt.runJSJobs()
+    if r.isSome:
+      break
+    let ctx = r.error
+    ctx.writeException(client.console.err)
+  if client.exitCode != -1:
+    client.quit(0)
 
 proc evalJS(client: Client; src, filename: string; module = false): JSValue =
   client.pager.term.unblockStdin()
@@ -426,8 +428,7 @@ proc input(client: Client): EmptyPromise =
       client.feednext = false
   client.pager.inputBuffer = ""
   if p == nil:
-    p = EmptyPromise()
-    p.resolve()
+    p = newResolvedPromise()
   return p
 
 proc consoleBuffer(client: Client): Container {.jsfget.} =
@@ -869,21 +870,23 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
-  let pager = newPager(config, forkserver, jsctx, warnings, urandom)
   let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
   loader.setSocketDir(config.external.sockdir)
-  pager.setLoader(loader)
   let client = Client(
     config: config,
     jsrt: jsrt,
     jsctx: jsctx,
-    pager: pager,
     exitCode: -1,
     alive: true,
     factory: newCAtomFactory(),
     loader: loader,
     urandom: urandom
   )
+  client.pager = newPager(config, forkserver, jsctx, warnings, urandom,
+    proc(action: string; arg0: int32) =
+      discard client.evalAction(action, arg0)
+  )
+  client.pager.setLoader(loader)
   JS_SetInterruptHandler(jsrt, interruptHandler, cast[pointer](client))
   let global = JS_GetGlobalObject(jsctx)
   jsctx.setGlobal(client)

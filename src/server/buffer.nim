@@ -32,14 +32,15 @@ import io/dynstream
 import io/poll
 import io/promise
 import io/timeout
-import loader/headers
-import loader/loaderiface
-import loader/request
+import local/select
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsregex
 import monoucha/libregexp
 import monoucha/quickjs
+import server/headers
+import server/loaderiface
+import server/request
 import types/blob
 import types/cell
 import types/color
@@ -658,7 +659,7 @@ type
 
   SelectResult* = object
     multiple*: bool
-    options*: seq[string]
+    options*: seq[SelectOption]
     selected*: seq[int]
 
   ClickResult* = object
@@ -1385,22 +1386,24 @@ proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
 
 proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
   let repaint = buffer.setFocus(select)
-  var options: seq[string] = @[]
+  var options: seq[SelectOption] = @[]
   var selected: seq[int] = @[]
   var i = 0
   for option in select.options:
-    options.add(option.textContent.stripAndCollapse())
+    #TODO: add nop options for each optgroup
+    options.add(SelectOption(
+      s: option.textContent.stripAndCollapse()
+    ))
     if option.selected:
       selected.add(i)
     inc i
-  let select = SelectResult(
-    multiple: select.attrb(satMultiple),
-    options: options,
-    selected: selected
-  )
   return ClickResult(
     repaint: repaint,
-    select: some(select)
+    select: some(SelectResult(
+      multiple: select.attrb(satMultiple),
+      options: options,
+      selected: selected
+    ))
   )
 
 proc baseURL(buffer: Buffer): URL =

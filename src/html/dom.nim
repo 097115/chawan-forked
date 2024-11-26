@@ -25,10 +25,6 @@ import io/console
 import io/dynstream
 import io/promise
 import io/timeout
-import loader/headers
-import loader/loaderiface
-import loader/request
-import loader/response
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -37,6 +33,10 @@ import monoucha/jspropenumlist
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
+import server/headers
+import server/loaderiface
+import server/request
+import server/response
 import types/bitmap
 import types/blob
 import types/canvastypes
@@ -2061,7 +2061,7 @@ func scriptingEnabled(element: Element): bool =
 
 func isSubmitButton*(element: Element): bool =
   if element of HTMLButtonElement:
-    return element.attr(satType) == "submit"
+    return element.attr(satType).equalsIgnoreCase("submit")
   elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
     return element.inputType in {itSubmit, itImage}
@@ -2642,7 +2642,7 @@ func findAnchor*(document: Document; id: string): Element =
 
 proc findMetaRefresh*(document: Document): Element =
   for child in document.elements(TAG_META):
-    if child.attr(satHttpEquiv) == "refresh":
+    if child.attr(satHttpEquiv).equalsIgnoreCase("refresh"):
       return child
   return nil
 
