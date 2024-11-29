@@ -20,7 +20,6 @@ type
     mfCopiousoutput = "copiousoutput"
     mfHtmloutput = "x-htmloutput" # from w3m
     mfAnsioutput = "x-ansioutput" # Chawan extension
-    mfNeedsstyle = "x-needsstyle" # Chawan extension
 
   MailcapEntry* = object
     mt*: string
