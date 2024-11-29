@@ -273,14 +273,14 @@ proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
     map.important.add(rule.importantVals)
 
 proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
-    map: RuleListMap; styling: bool) =
+    map: RuleListMap) =
   var rules: CSSValueEntryMap
   var presHints: CSSComputedValues = nil
   rules[coUserAgent].add(map.ua[peNone])
   rules[coUser].add(map.user[peNone])
   for rule in map.author:
     rules[coAuthor].add(rule[peNone])
-  if styling and styledNode.node != nil:
+  if styledNode.node != nil:
     let element = Element(styledNode.node)
     let style = element.cachedStyle
     if style != nil:
@@ -337,13 +337,12 @@ func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
     author: authordecls
   )
 
-proc applyStyle(parent, styledNode: StyledNode; map: RuleListMap;
-    styling: bool) =
+proc applyStyle(parent, styledNode: StyledNode; map: RuleListMap) =
   let parentComputed = if parent != nil:
     parent.computed
   else:
     rootProperties()
-  styledNode.applyDeclarations(parentComputed, map, styling)
+  styledNode.applyDeclarations(parentComputed, map)
 
 type CascadeFrame = object
   styledParent: StyledNode
@@ -375,8 +374,7 @@ proc applyRulesFrameValid(frame: var CascadeFrame): StyledNode =
   return cachedChild
 
 proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
-    author: seq[CSSStylesheet]; declmap: var RuleListMap; styling: bool):
-    StyledNode =
+    author: seq[CSSStylesheet]; declmap: var RuleListMap): StyledNode =
   var styledChild: StyledNode = nil
   let pseudo = frame.pseudo
   let styledParent = frame.styledParent
@@ -444,7 +442,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         styledChild = styledParent.newStyledElement(element)
         styledParent.children.add(styledChild)
         declmap = styledChild.calcRules(ua, user, author)
-        styledParent.applyStyle(styledChild, declmap, styling)
+        applyStyle(styledParent, styledChild, declmap)
       elif child of Text:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
@@ -454,7 +452,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let element = Element(child)
       styledChild = newStyledElement(element)
       declmap = styledChild.calcRules(ua, user, author)
-      styledParent.applyStyle(styledChild, declmap, styling)
+      applyStyle(styledParent, styledChild, declmap)
   return styledChild
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
@@ -558,8 +556,7 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
       # From here on, computed values of this node's children are invalid
       # because of property inheritance.
       frame.cachedChild = nil
-      frame.applyRulesFrameInvalid(ua, user, author, declmap,
-        document.window.styling)
+      frame.applyRulesFrameInvalid(ua, user, author, declmap)
     if styledChild != nil:
       if styledParent == nil:
         # Root element
